@@ -35,7 +35,7 @@ class DeepSeekAnalyzer:
         """检查API是否可用"""
         return bool(self.api_key)
 
-    def chat(self, messages: List[Dict], temperature: float = 0.7, max_tokens: int = 4000) -> str:
+    def chat(self, messages: List[Dict], temperature: float = 0.7, max_tokens: int = 8000) -> str:
         """
         调用DeepSeek聊天API
 
@@ -119,36 +119,82 @@ class DeepSeekAnalyzer:
 
     def _build_analysis_prompt(self, data_summary: Dict, analysis_type: str) -> str:
         """构建分析提示词"""
+
+        # 构建更详细的聚类分析描述
+        clustering_info = ""
+        cluster_data = data_summary.get('clustering_result', {})
+        if cluster_data.get('clusters'):
+            for cluster_name, info in cluster_data['clusters'].items():
+                clustering_info += f"\n- {cluster_name}：{info.get('count', 0)}户（占比{info.get('percentage', 0):.1f}%），平均融合指数{info.get('avg_fusion', 0):.2%}，平均收入{info.get('avg_income', 0):,.0f}元"
+
+        # 产业分析详情
+        industry_info = data_summary.get('industry_analysis', {})
+        top_industries = industry_info.get('top_industries', [])
+        industry_str = ""
+        for ind in top_industries[:5]:
+            industry_str += f"\n  - {ind.get('type', 'N/A')}：收入{ind.get('revenue', 0):,.0f}万元，融合度{ind.get('fusion', 0):.2%}"
+
         prompt = f"""
-请基于以下数据进行城乡产业融合发展的专业分析：
+# 城乡产业融合发展数据分析报告
 
-## 数据概览
-- 农户总数: {data_summary.get('farmer_count', 'N/A')}
-- 村庄总数: {data_summary.get('village_count', 'N/A')}
-- 产业记录数: {data_summary.get('industry_count', 'N/A')}
-- 平均融合指数: {data_summary.get('avg_fusion_index', 'N/A')}
-- 平均农户收入: {data_summary.get('avg_income', 'N/A')}
+## 一、区域基础数据
+- **农户总数**：{data_summary.get('farmer_count', 'N/A')} 户
+- **村庄总数**：{data_summary.get('village_count', 'N/A')} 个
+- **产业记录数**：{data_summary.get('industry_count', 'N/A')} 条
+- **平均融合指数**：{data_summary.get('avg_fusion_index', 'N/A')}
+- **平均农户年收入**：{data_summary.get('avg_income', 'N/A')}
 
-## 聚类分析结果
-{json.dumps(data_summary.get('clustering_result', {}), ensure_ascii=False, indent=2)}
+## 二、农户聚类分析结果
+共有 {cluster_data.get('cluster_count', 0)} 个农户群体：
+{clustering_info}
 
-## 融合指数分析
-{json.dumps(data_summary.get('fusion_analysis', {}), ensure_ascii=False, indent=2)}
+## 三、融合指数详细分析
+- **高融合度农户（>0.6）**：{data_summary.get('fusion_analysis', {}).get('high_fusion', 0)} 户
+- **中融合度农户（0.4-0.6）**：{data_summary.get('fusion_analysis', {}).get('medium_fusion', 0)} 户
+- **低融合度农户（<0.4）**：{data_summary.get('fusion_analysis', {}).get('low_fusion', 0)} 户
 
-## 产业分析
-{json.dumps(data_summary.get('industry_analysis', {}), ensure_ascii=False, indent=2)}
+## 四、产业发展现状
+- **产业总收入**：{industry_info.get('total_revenue', 0):,.0f} 万元
+- **产业总利润**：{industry_info.get('total_profit', 0):,.0f} 万元
+- **总就业人数**：{industry_info.get('total_employment', 0)} 人
+- **优势产业**：{industry_str}
 
-## 风险评估
-{json.dumps(data_summary.get('risk_assessment', {}), ensure_ascii=False, indent=2)}
+## 五、风险评估
+- **综合风险等级**：{data_summary.get('risk_assessment', {}).get('level', 'N/A')}
+- **综合风险得分**：{data_summary.get('risk_assessment', {}).get('score', 'N/A')}
 
-请从以下几个方面进行深入分析：
-1. **现状诊断**：当前区域城乡产业融合发展的主要特征和问题
-2. **趋势判断**：基于数据的发展趋势预判
-3. **瓶颈识别**：制约融合发展的关键瓶颈
-4. **对策建议**：针对性的政策建议和实施路径
-5. **风险预警**：潜在风险点和应对措施
+---
 
-请用专业、简洁的语言进行分析，每部分给出3-5个要点。
+请作为城乡产业融合发展专家，基于以上数据进行**全面深入的专业分析**，撰写一份详尽的分析报告。
+
+## 报告要求
+
+### 1. 现状诊断（不少于200字）
+分析当前区域城乡产业融合发展的整体状况、主要特征、存在的突出问题，结合数据进行量化说明。
+
+### 2. 聚类群体特征分析（不少于300字）
+详细解读各农户群体的特征差异，分析不同群体的发展水平、资源禀赋、发展潜力，提出差异化发展建议。
+
+### 3. 融合发展瓶颈识别（不少于200字）
+识别制约区域产业融合发展的关键瓶颈，包括但不限于：产业链短板、要素配置问题、体制机制障碍等。
+
+### 4. 趋势判断与预测（不少于150字）
+基于当前数据和发展态势，预判未来3-5年的发展趋势，指出机遇与挑战。
+
+### 5. 政策建议与实施路径（不少于400字）
+提出系统性的政策建议框架，包括：
+- 产业政策建议（3条以上具体措施）
+- 人才政策建议
+- 金融支持政策
+- 基础设施建设
+- 保障机制
+
+### 6. 风险防控措施（不少于150字）
+针对识别的风险点，提出具体的防控措施和应急预案。
+
+---
+
+**注意**：请使用专业、规范的语言，确保分析有数据支撑，建议具有可操作性。全文不少于1500字。
 """
         return prompt
 

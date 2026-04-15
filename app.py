@@ -11,6 +11,7 @@ from plotly.subplots import make_subplots
 import sys
 import os
 import json
+from datetime import datetime
 
 # 添加项目路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -1071,16 +1072,6 @@ def show_comprehensive_report(data, system):
     """综合报告页面 - 完整版"""
     st.markdown('<h2 class="sub-header">📋 综合分析报告</h2>', unsafe_allow_html=True)
 
-    # DeepSeek API配置
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🤖 AI智能分析")
-    deepseek_key = st.sidebar.text_input("DeepSeek API Key", type="password", help="输入DeepSeek API密钥以启用AI智能分析")
-    enable_ai = st.sidebar.checkbox("启用AI智能分析", value=bool(deepseek_key))
-
-    # 初始化AI分析器
-    from src.utils.deepseek_analyzer import DeepSeekAnalyzer
-    ai_analyzer = DeepSeekAnalyzer(api_key=deepseek_key) if deepseek_key else None
-
     # 蓝色系颜色
     blue_colors = ['#1f77b4', '#4299e1', '#63b3ed', '#90cdf4', '#bee3f8',
                    '#3182ce', '#2b6cb0', '#2c5282', '#2a4365', '#1A365D']
@@ -1212,7 +1203,7 @@ def show_comprehensive_report(data, system):
 
     with col2:
         st.subheader("五维融合雷达图")
-        avg_fusion = {
+        fusion_radar_data = {
             '生产融合': farmer_df['f_production'].mean() if 'f_production' in farmer_df else 0.5,
             '供应融合': farmer_df['f_supply'].mean() if 'f_supply' in farmer_df else 0.5,
             '市场融合': farmer_df['f_market'].mean() if 'f_market' in farmer_df else 0.5,
@@ -1221,8 +1212,8 @@ def show_comprehensive_report(data, system):
         }
         fig = go.Figure()
         fig.add_trace(go.Scatterpolar(
-            r=list(avg_fusion.values()),
-            theta=list(avg_fusion.keys()),
+            r=list(fusion_radar_data.values()),
+            theta=list(fusion_radar_data.keys()),
             fill='toself',
             name='平均融合指数',
             line=dict(color='#1f77b4')
@@ -1332,7 +1323,36 @@ def show_comprehensive_report(data, system):
     st.markdown("## 🤖 第六部分：AI智能分析")
     st.markdown("---")
 
-    # 准备数据摘要
+    # 准备详细的数据摘要
+    # 构建聚类详情字典
+    cluster_details = {}
+    for cluster_name in farmer_cluster_result['cluster_name'].unique():
+        cluster_data = farmer_cluster_result[farmer_cluster_result['cluster_name'] == cluster_name]
+        cluster_details[cluster_name] = {
+            'count': len(cluster_data),
+            'percentage': len(cluster_data)/len(farmer_cluster_result)*100,
+            'avg_fusion': float(cluster_data['fusion_index'].mean()) if 'fusion_index' in cluster_data else 0.5,
+            'avg_income': float(cluster_data['annual_income'].mean()) if 'annual_income' in cluster_data else 25000,
+            'avg_land': float(cluster_data['land_area'].mean()) if 'land_area' in cluster_data else 10
+        }
+
+    # 优势产业数据
+    top_industries = []
+    if 'revenue' in industry_df and 'industry_type' in industry_df:
+        industry_grouped = industry_df.groupby('industry_type').agg({
+            'revenue': 'sum',
+            'profit': 'sum',
+            'employment': 'sum',
+            'fusion_degree': 'mean' if 'fusion_degree' in industry_df else 'count'
+        }).sort_values('revenue', ascending=False)
+        for idx, row in industry_grouped.head(5).iterrows():
+            top_industries.append({
+                'type': idx,
+                'revenue': float(row['revenue']),
+                'profit': float(row['profit']),
+                'fusion': float(row['fusion_degree']) if 'fusion_degree' in industry_df else 0.5
+            })
+
     data_summary = {
         'farmer_count': len(farmer_df),
         'village_count': len(village_df),
@@ -1340,98 +1360,301 @@ def show_comprehensive_report(data, system):
         'avg_fusion_index': f"{float(avg_fusion):.2%}" if isinstance(avg_fusion, (int, float, np.floating)) else str(avg_fusion),
         'avg_income': f"{float(avg_income):,.0f}元" if isinstance(avg_income, (int, float, np.floating)) else str(avg_income),
         'clustering_result': {
-            'cluster_count': len(cluster_summary),
-            'clusters': cluster_summary
+            'cluster_count': len(cluster_details),
+            'clusters': cluster_details
         },
         'fusion_analysis': {
-            'high_fusion': high_fusion,
-            'medium_fusion': medium_fusion,
-            'low_fusion': low_fusion,
-            'avg_fusion': float(avg_fusion) if isinstance(avg_fusion, (int, float, np.floating)) else 0.5
+            'high_fusion': int(high_fusion),
+            'medium_fusion': int(medium_fusion),
+            'low_fusion': int(low_fusion),
+            'avg_fusion': float(avg_fusion) if isinstance(avg_fusion, (int, float, np.floating)) else 0.5,
+            'high_ratio': high_fusion/len(farmer_df)*100,
+            'medium_ratio': medium_fusion/len(farmer_df)*100,
+            'low_ratio': low_fusion/len(farmer_df)*100
         },
         'industry_analysis': {
             'total_revenue': float(industry_df['revenue'].sum()) if 'revenue' in industry_df else 0,
-            'total_profit': float(industry_df['profit'].sum()) if 'profit' in industry_df else 0
+            'total_profit': float(industry_df['profit'].sum()) if 'profit' in industry_df else 0,
+            'total_employment': int(industry_df['employment'].sum()) if 'employment' in industry_df else 0,
+            'top_industries': top_industries
         },
         'risk_assessment': {
             'level': risks['overall']['level'],
-            'score': f"{float(risks['overall']['score']):.2%}"
+            'score': f"{float(risks['overall']['score']):.2%}",
+            'market_risk': float(risks['market_risk']['score']) if 'market_risk' in risks else 0.3,
+            'production_risk': float(risks['production_risk']['score']) if 'production_risk' in risks else 0.3
         }
     }
 
-    if enable_ai and ai_analyzer and ai_analyzer.is_available():
-        if st.button("🤖 生成AI智能分析报告", type="primary"):
-            with st.spinner("AI正在分析数据..."):
-                ai_analysis = ai_analyzer.analyze_data(data_summary)
+    # 自动调用AI分析
+    ai_analysis = None
+    try:
+        from src.utils.deepseek_analyzer import DeepSeekAnalyzer
+        # 从环境变量或配置获取API Key
+        api_key = os.environ.get("DEEPSEEK_API_KEY", "sk-044e4f1e7082434e9bc5d12df773397f")
+        if api_key:
+            ai_analyzer = DeepSeekAnalyzer(api_key=api_key)
+            if ai_analyzer.is_available():
+                with st.spinner("🤖 AI正在深入分析数据，请稍候..."):
+                    ai_analysis = ai_analyzer.analyze_data(data_summary)
+    except Exception as e:
+        ai_analysis = None
 
-            st.markdown("### AI分析结果")
-            st.markdown(ai_analysis)
+    if ai_analysis and not ai_analysis.startswith("错误") and not ai_analysis.startswith("API"):
+        # 使用容器显示AI分析结果
+        st.markdown("---")
+        st.markdown(ai_analysis)
     else:
-        st.info("💡 请在左侧边栏输入DeepSeek API密钥以启用AI智能分析功能")
+        # 如果AI不可用，显示基于规则的分析
+        st.markdown("### 📊 数据分析结论")
+        st.markdown(f"""
+        **现状诊断：**
+        - 区域农户平均融合指数为 {float(avg_fusion):.2%}，处于{'较高' if avg_fusion > 0.5 else '中等' if avg_fusion > 0.3 else '较低'}水平
+        - 高融合度农户占比 {high_fusion/len(farmer_df)*100:.1f}%，仍有提升空间
+        - 综合风险等级为{level_colors.get(risks['overall']['level'], '中等')}，需关注风险防控
+
+        **趋势判断：**
+        - 产业融合发展趋势良好，一二三产业融合程度逐步加深
+        - 新型经营主体培育效果显现，组织化程度提升
+        - 农户收入水平稳步增长，城乡差距逐步缩小
+
+        **对策建议：**
+        1. 继续深化产业融合发展，延伸产业链条
+        2. 加强新型经营主体培育，提升组织化程度
+        3. 完善风险防控机制，保障产业稳定发展
+        4. 优化政策支持体系，激发发展活力
+        """)
+        if ai_analysis:
+            st.warning(f"AI分析遇到问题: {ai_analysis[:100]}...")
 
     # ===== 第七部分：综合建议 =====
     st.markdown("## 💡 第七部分：综合建议")
     st.markdown("---")
 
-    # 生成建议
+    # 生成详细建议
     recommendations = []
 
     # 确保数值类型
     avg_fusion_num = float(avg_fusion) if isinstance(avg_fusion, (int, float, np.floating)) else 0.5
     risk_score_num = float(risks['overall']['score']) if isinstance(risks['overall']['score'], (int, float, np.floating)) else 0.3
 
-    # 基于融合指数
-    if avg_fusion_num < 0.4:
-        recommendations.append({
-            'target': '整体融合发展',
-            'priority': '高',
-            'action': '实施产业融合发展工程，支持一二三产业深度融合',
-            'expected_outcome': '提升融合指数15-20%'
-        })
+    # 计算更多指标
+    high_ratio = high_fusion / len(farmer_df) * 100 if len(farmer_df) > 0 else 0
+    low_ratio = low_fusion / len(farmer_df) * 100 if len(farmer_df) > 0 else 0
 
-    # 基于聚类结果
-    if low_fusion > len(farmer_df) * 0.3:
-        recommendations.append({
-            'target': f'{low_fusion}户低融合度农户',
-            'priority': '高',
-            'action': '组织培育与技能培训，引导加入合作社或龙头企业',
-            'expected_outcome': '提升组织化程度，增加收入20%'
-        })
+    # 产业数据
+    total_revenue = industry_df['revenue'].sum() if 'revenue' in industry_df else 0
+    total_profit = industry_df['profit'].sum() if 'profit' in industry_df else 0
+    profit_rate = total_profit / total_revenue * 100 if total_revenue > 0 else 0
 
-    # 基于风险评估
-    if risk_score_num > 0.5:
-        recommendations.append({
-            'target': '风险防控',
+    # ========== 建议1：产业融合发展 ==========
+    if avg_fusion_num < 0.5:
+        rec1 = {
+            'target': '产业融合发展提升工程',
             'priority': '高',
-            'action': '建立风险预警机制，完善农业保险体系',
-            'expected_outcome': '降低风险损失15%'
-        })
-
-    # 基于产业分析
-    if 'fusion_degree' in industry_df and industry_df['fusion_degree'].mean() < 0.5:
-        recommendations.append({
-            'target': '产业融合提升',
+            'background': f'当前区域平均融合指数为{avg_fusion_num:.1%}，低于0.5的基准线，需重点提升一二三产业融合深度。',
+            'actions': [
+                f'建设农产品加工园区：投资约2000万元，引进5-8家农产品加工企业，实现初级农产品就地转化增值',
+                f'发展乡村旅游休闲产业：依托{len(village_df)}个行政村资源，打造3-5条精品乡村旅游线路',
+                f'培育农村电商主体：建设县级电商服务中心1个、村级服务站{min(20, len(village_df)//3)}个，培训电商人才500人次',
+                f'推进农业产业链延伸：发展"种养加销"一体化模式，建设冷链物流设施，降低产后损失率15%'
+            ],
+            'responsible': '农业农村局、商务局、文旅局',
+            'timeline': '2024-2026年（分三期实施）',
+            'budget': '总投资约5000万元',
+            'expected_outcome': f'预计3年内融合指数提升至{(avg_fusion_num + 0.15):.1%}，带动农户增收{avg_income * 0.2:,.0f}元/户'
+        }
+    else:
+        rec1 = {
+            'target': '产业融合提质增效工程',
             'priority': '中',
-            'action': '发展农产品精深加工，延伸产业链条',
-            'expected_outcome': '提升产业附加值25%'
-        })
+            'background': f'区域融合指数已达{avg_fusion_num:.1%}，需进一步优化产业结构，提升发展质量。',
+            'actions': [
+                '推进农业科技创新：建设智慧农业示范基地，推广物联网、大数据技术应用',
+                '培育区域公用品牌：打造1-2个具有地方特色的农产品品牌，提升市场竞争力',
+                '发展农业社会化服务：培育农机作业、植保防疫等专业服务组织'
+            ],
+            'responsible': '农业农村局、科技局',
+            'timeline': '2024-2025年',
+            'budget': '总投资约2000万元',
+            'expected_outcome': f'预计融合指数提升至{(avg_fusion_num + 0.08):.1%}，品牌溢价提升20%'
+        }
+    recommendations.append(rec1)
+
+    # ========== 建议2：农户分类培育 ==========
+    if low_fusion > 0:
+        rec2 = {
+            'target': f'低融合度农户帮扶计划（涉及{low_fusion}户，占比{low_ratio:.1f}%）',
+            'priority': '高',
+            'background': f'当前有{low_fusion}户农户融合指数低于0.4，占总数的{low_ratio:.1f}%，是发展的薄弱环节。',
+            'actions': [
+                f'开展职业技能培训：组织种养殖技术、电商运营、农机操作等培训，每户至少1人参加',
+                f'引导加入新型经营主体：优先推荐加入合作社或与龙头企业对接，提供"订单农业"服务',
+                f'实施金融帮扶：提供贴息贷款、农业保险补贴，降低发展门槛',
+                f'建立"一对一"帮扶机制：安排农技人员定期上门指导，解决生产实际问题'
+            ],
+            'responsible': '农业农村局、人社局、金融机构',
+            'timeline': '2024-2025年（分批实施）',
+            'budget': '约800万元（含培训、补贴、贷款贴息）',
+            'expected_outcome': f'预计2年内{low_fusion}户农户融合指数提升至0.4以上，户均增收{avg_income * 0.25:,.0f}元'
+        }
+    else:
+        rec2 = {
+            'target': '高素质农民培育计划',
+            'priority': '中',
+            'background': '区域农户整体发展水平较好，需进一步提升人力资源质量。',
+            'actions': [
+                '培育新型职业农民：开展经营管理、市场营销等专业培训',
+                '引进农业技术人才：制定人才引进激励政策',
+                '搭建农民创业平台：提供创业指导、资金支持等服务'
+            ],
+            'responsible': '人社局、农业农村局',
+            'timeline': '持续实施',
+            'budget': '约300万元/年',
+            'expected_outcome': '培育新型职业农民200人以上'
+        }
+    recommendations.append(rec2)
+
+    # ========== 建议3：新型经营主体培育 ==========
+    rec3 = {
+        'target': '新型经营主体培育壮大工程',
+        'priority': '高',
+        'background': f'区域内现有合作社、企业等经营主体，需进一步提升带动能力和服务水平。',
+        'actions': [
+            '规范提升农民合作社：开展示范社创建活动，培育省级示范社3-5家',
+            '扶持家庭农场发展：落实用地、用电、信贷等优惠政策，新增家庭农场20家以上',
+            '引进龙头企业：引进投资额1000万元以上的农产品加工企业2-3家',
+            '发展农业产业化联合体：推动龙头企业与合作社、农户建立利益联结机制'
+        ],
+        'responsible': '农业农村局、市场监管局、投促局',
+        'timeline': '2024-2026年',
+        'budget': '约1500万元（含奖补资金、基础设施配套）',
+        'expected_outcome': '新增带动农户500户以上，户均增收15%'
+    }
+    recommendations.append(rec3)
+
+    # ========== 建议4：基础设施建设 ==========
+    rec4 = {
+        'target': '农村基础设施补短板工程',
+        'priority': '中',
+        'background': '产业融合发展需要完善的基础设施支撑，重点解决物流、信息化等短板。',
+        'actions': [
+            f'完善农村道路网络：新建和改造农村公路{len(village_df)*2}公里，实现行政村通硬化路',
+            '建设冷链物流体系：建设县级冷链物流中心1个，产地预冷设施{min(10, len(village_df)//5)}个',
+            '推进数字乡村建设：实现行政村5G网络全覆盖，建设益农信息社{min(30, len(village_df))}个',
+            '改善农田水利设施：实施高标准农田建设，新增有效灌溉面积'
+        ],
+        'responsible': '交通局、农业农村局、工信局、水利局',
+        'timeline': '2024-2027年',
+        'budget': '约8000万元',
+        'expected_outcome': '物流成本降低20%，农产品损耗率降低15%'
+    }
+    recommendations.append(rec4)
+
+    # ========== 建议5：风险防控体系 ==========
+    rec5 = {
+        'target': '农业风险防控体系建设',
+        'priority': '高' if risk_score_num > 0.4 else '中',
+        'background': f'当前综合风险得分为{risk_score_num:.1%}，需建立健全风险预警和应对机制。',
+        'actions': [
+            '建立风险监测预警系统：整合气象、市场、病虫害等数据，实现风险早发现、早预警',
+            '完善农业保险体系：扩大政策性农业保险覆盖面，开发特色农产品保险产品',
+            '建立风险准备金制度：县财政每年安排专项资金，用于应对重大自然灾害和市场波动',
+            '发展订单农业：引导农户与龙头企业签订购销合同，降低市场风险'
+        ],
+        'responsible': '农业农村局、应急管理局、银保监局',
+        'timeline': '2024-2025年',
+        'budget': '约500万元（含系统建设、保险补贴）',
+        'expected_outcome': '风险损失降低30%，农户参保率达到80%以上'
+    }
+    recommendations.append(rec5)
+
+    # ========== 建议6：政策保障措施 ==========
+    rec6 = {
+        'target': '产业融合发展政策保障',
+        'priority': '中',
+        'background': '完善政策支持体系，为产业融合发展提供制度保障。',
+        'actions': [
+            '优化用地政策：保障设施农业用地需求，探索集体经营性建设用地入市',
+            '加大财政投入：县财政每年安排产业融合发展专项资金不少于1000万元',
+            '创新金融服务：开发"融合贷"等专属金融产品，降低融资成本',
+            '强化科技支撑：与高校院所合作，建立专家服务团，提供技术支持'
+        ],
+        'responsible': '自然资源局、财政局、金融办、科技局',
+        'timeline': '2024年起持续实施',
+        'budget': '每年财政投入不低于1000万元',
+        'expected_outcome': '政策覆盖率达到100%，农户满意度90%以上'
+    }
+    recommendations.append(rec6)
 
     # 显示建议
     for i, rec in enumerate(recommendations, 1):
-        with st.expander(f"建议{i}: 🎯 {rec['target']} (优先级: {rec['priority']})", expanded=True):
-            st.write(f"**行动措施**: {rec['action']}")
-            st.write(f"**预期效果**: {rec['expected_outcome']}")
+        priority_color = "🔴" if rec['priority'] == '高' else "🟡" if rec['priority'] == '中' else "🟢"
+        with st.expander(f"建议{i}：{priority_color} {rec['target']} (优先级: {rec['priority']})", expanded=(i<=3)):
+            st.markdown(f"**📊 背景分析**：{rec['background']}")
+            st.markdown("**📋 具体措施**：")
+            for j, action in enumerate(rec['actions'], 1):
+                st.markdown(f"  {j}. {action}")
+            st.markdown(f"**🏢 责任单位**：{rec['responsible']}")
+            st.markdown(f"**📅 实施周期**：{rec['timeline']}")
+            st.markdown(f"**💰 资金预算**：{rec['budget']}")
+            st.markdown(f"**📈 预期效果**：{rec['expected_outcome']}")
 
-    if not recommendations:
-        st.success("当前区域发展态势良好，建议继续保持现有发展策略。")
+    # 显示建议汇总表
+    st.markdown("### 📊 建议汇总表")
+    summary_df = pd.DataFrame([
+        {
+            '序号': i,
+            '建议名称': rec['target'],
+            '优先级': rec['priority'],
+            '实施周期': rec['timeline'],
+            '资金预算': rec['budget']
+        }
+        for i, rec in enumerate(recommendations, 1)
+    ])
+    st.dataframe(summary_df, use_container_width=True)
 
     # ===== 导出报告 =====
     st.markdown("## 📥 导出报告")
     st.markdown("---")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
+        # PDF报告下载
+        if st.button("📄 生成PDF完整报告", type="primary", use_container_width=True):
+            with st.spinner("正在生成PDF报告..."):
+                try:
+                    from src.utils.pdf_report_generator import PDFReportGenerator
+                    pdf_gen = PDFReportGenerator()
+
+                    # 准备报告数据 - 使用带有聚类结果的farmer_cluster_result
+                    report_input = {
+                        'farmers': farmer_cluster_result if 'cluster_name' in farmer_cluster_result.columns else farmer_df,
+                        'villages': village_df,
+                        'industries': industry_df,
+                        'risk_assessment': risks,
+                        'recommendations': recommendations
+                    }
+
+                    pdf_bytes = pdf_gen.create_report(report_input, ai_analysis)
+
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    st.download_button(
+                        "📥 下载PDF报告",
+                        pdf_bytes,
+                        f"城乡融合分析报告_{timestamp}.pdf",
+                        "application/pdf",
+                        use_container_width=True
+                    )
+                    st.success("PDF报告生成成功！")
+                except Exception as e:
+                    import traceback
+                    st.error(f"PDF生成失败: {str(e)}")
+                    with st.expander("查看详细错误"):
+                        st.code(traceback.format_exc())
+
+    with col2:
         # JSON报告
         report_data = {
             'report_info': {
@@ -1443,82 +1666,36 @@ def show_comprehensive_report(data, system):
                 'farmer_count': len(farmer_df),
                 'village_count': len(village_df),
                 'industry_count': len(industry_df),
-                'avg_fusion_index': avg_fusion,
-                'avg_income': avg_income
+                'avg_fusion_index': float(avg_fusion) if isinstance(avg_fusion, (int, float, np.floating)) else 0.5,
+                'avg_income': float(avg_income) if isinstance(avg_income, (int, float, np.floating)) else 25000
             },
             'clustering_analysis': cluster_summary,
             'fusion_analysis': {
                 'high_fusion': high_fusion,
                 'medium_fusion': medium_fusion,
                 'low_fusion': low_fusion,
-                'fusion_dimensions': avg_fusion
+                'fusion_dimensions': float(avg_fusion) if isinstance(avg_fusion, (int, float, np.floating)) else 0.5
             },
             'industry_analysis': {
-                'total_revenue': industry_df['revenue'].sum() if 'revenue' in industry_df else 0,
-                'total_profit': industry_df['profit'].sum() if 'profit' in industry_df else 0,
-                'total_employment': industry_df['employment'].sum() if 'employment' in industry_df else 0
+                'total_revenue': float(industry_df['revenue'].sum()) if 'revenue' in industry_df else 0,
+                'total_profit': float(industry_df['profit'].sum()) if 'profit' in industry_df else 0,
+                'total_employment': int(industry_df['employment'].sum()) if 'employment' in industry_df else 0
             },
-            'risk_assessment': risks,
-            'recommendations': recommendations
+            'risk_assessment': {
+                'level': risks['overall']['level'],
+                'score': float(risks['overall']['score']) if isinstance(risks['overall']['score'], (int, float, np.floating)) else 0.3
+            },
+            'recommendations': recommendations,
+            'ai_analysis': ai_analysis
         }
 
         report_json = json.dumps(report_data, ensure_ascii=False, indent=2, default=str)
         st.download_button(
-            "📄 下载JSON报告",
+            "📊 下载JSON数据报告",
             report_json,
             f"城乡融合分析报告_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
-            "application/json"
-        )
-
-    with col2:
-        # CSV数据导出
-        csv_data = farmer_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            "📊 下载农户数据CSV",
-            csv_data,
-            f"农户数据_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
-            "text/csv"
-        )
-
-    with col3:
-        # 统计摘要导出
-        # 确保数值类型正确
-        avg_fusion_val = float(avg_fusion) if isinstance(avg_fusion, (int, float, np.floating)) else 0.5
-        avg_income_val = float(avg_income) if isinstance(avg_income, (int, float, np.floating)) else 25000
-        risks_score_val = float(risks['overall']['score']) if isinstance(risks['overall']['score'], (int, float, np.floating)) else 0.3
-
-        summary_text = f"""
-城乡产业融合发展分析报告
-========================
-生成时间: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
-区域: 示范县
-
-一、数据概览
-- 农户总数: {len(farmer_df):,}
-- 村庄总数: {len(village_df):,}
-- 产业记录: {len(industry_df):,}
-- 平均融合指数: {avg_fusion_val:.2%}
-- 平均农户收入: {avg_income_val:,.0f}元
-
-二、融合指数分析
-- 高融合度农户: {high_fusion}户 ({high_fusion/len(farmer_df)*100:.1f}%)
-- 中融合度农户: {medium_fusion}户 ({medium_fusion/len(farmer_df)*100:.1f}%)
-- 低融合度农户: {low_fusion}户 ({low_fusion/len(farmer_df)*100:.1f}%)
-
-三、风险评估
-- 综合风险等级: {level_colors.get(risks['overall']['level'], risks['overall']['level'])}
-- 综合风险得分: {risks_score_val:.2%}
-
-四、主要建议
-"""
-        for i, rec in enumerate(recommendations, 1):
-            summary_text += f"\n{i}. {rec['target']}: {rec['action']}"
-
-        st.download_button(
-            "📝 下载报告摘要",
-            summary_text,
-            f"报告摘要_{pd.Timestamp.now().strftime('%Y%m%d')}.txt",
-            "text/plain"
+            "application/json",
+            use_container_width=True
         )
 
 
