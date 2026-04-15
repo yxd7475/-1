@@ -1,5 +1,4 @@
 # Python
-__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -19,11 +18,6 @@ build/
 .vscode/
 *.swp
 *.swo
-
-# Data files
-data/raw/*.xlsx
-data/raw/*.csv
-*.log
 
 # OS
 .DS_Store
